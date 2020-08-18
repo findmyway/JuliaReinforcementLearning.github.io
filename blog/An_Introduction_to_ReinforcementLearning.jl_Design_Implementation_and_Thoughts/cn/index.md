@@ -291,13 +291,98 @@ keys(t)  # (:reward, :terminal)
 
 #### Case Study PPO
 
-接下来，我们以 [PPO](schulman2017proximal) \dcite{schulman2017proximal}算法为例，深入讲解其实现细节。之所以选择PPO算法是因为该算法的实现有许多有意思的细节，如果你读过[Implementation Matters in Deep RL: A Case Study on PPO and TRPO](https://openreview.net/pdf?id=r1etN1rtPB)\dcite{engstrom2019implementation}就会明白，这其中的许多实现细节会对该算法的最终效果产生较大的影响，接下来我们就来看看如何用 [ReinforcementLearning.jl][] 这个库，用Julia来实现PPO算法中的这些细节。
+接下来，我们以 [PPO](schulman2017proximal) \dcite{schulman2017proximal}算法为例，深入讲解其实现细节。之所以选择PPO算法是因为该算法的实现有许多有意思的细节，如果你读过[Implementation Matters in Deep RL: A Case Study on PPO and TRPO][]\dcite{engstrom2019implementation}就会明白，这其中的许多实现细节会对该算法的最终效果产生较大的影响，接下来我们就来看看如何用 [ReinforcementLearning.jl][] 这个库，用Julia来实现PPO算法中的这些细节。
 
+首先我们需要知道，PPO算法既可以用于连续动作空间的任务，也可以用作离散动作空间的任务，在[ReinforcementLearning.jl][]中，我们实现的是离散动作空间的PPO（欢迎大家发PR贡献连续动作空间的版本噢~），因此，我们可以定义一个`PPOLearner`，它的作用就是估计$Q$值，和前面一样，把它作为`QBasedPolicy`中的`learner`，和`explorer`放在一起，即可针对某个连续动作空间的环境返回相应的动作了。这里`explorer`的选择一般直接用`WeightedExplorer`(需要注意，内置的这个版本没有做softmax)，或者是`GumbelSoftmaxExplorer`。于是，目前为止我们的代码结构如下：
+
+```julia
+struct PPOLearner
+    # TODO
+end
+
+p = QBasedPolicy(
+    learner = PPOLearner(),
+    explorer = GumbelSoftmaxExplorer(),
+)
+```
+
+PPO算法本身属于Policy Gradient\footnote{有关Policy Gradient算法的各种变种可以参考 [Policy Gradient Algorithms
+](https://lilianweng.github.io/lil-log/2018/04/08/policy-gradient-algorithms.html)。}算法，其核心的优化器仍采用的是Actor-Critic结构，这里先看一下 PPO-Clip 这一算法的目标函数：
+
+$$
+\max_{\theta} \mathbb{E}_{(s_t, a_t) \sim \pi} \left[ min \left( clip(\rho_t, 1-\epsilon, 1+\epsilon \right) \hat{A_\pi}(s_t, a_t), \rho_t \hat{A_\pi}(s_t, a_t) \right]
+$$
+
+其中：
+
+$$
+\rho_t = \frac{\pi_\theta(a_t | s_t)}{\pi(a_t | s_t)}
+$$
+
+仔细分析可以看到，除了需要在实验过程中记录$s_t$,$a_t$，计算$\hat{A}$时需要记录 $r_t, t_t$之外，为了避免重复计算$\pi_\theta(a_t|s_t)$，我们可以将其顺便也记录下来。因此，需要定制一个 PPO 专用的 `Trajectory`：
+
+```julia
+function PPOTrajectory(; capacity, action_log_prob_size = (), action_log_prob_type = Float32, kw...,)
+    CombinedTrajectory(
+        SharedTrajectory(
+            CircularArrayBuffer{action_log_prob_type}(
+                action_log_prob_size...,
+                capacity + 1,
+            ),
+            :action_log_prob,
+        ),
+        CircularCompactSARTSATrajectory(; capacity = capacity, kw...),
+    )
+end
+```
+
+然后，在`PreActStage`将$\pi_\theta(a_t|s_t)$塞入`PPOTrajectory`：
+
+```julia
+function (agent::Agent{<:AbstractPolicy,<:PPOTrajectory})(::Training{PreActStage}, env)
+    action, action_log_prob = agent.policy(env)
+    state = get_state(env)
+    push!(
+        agent.trajectory;
+        state = state,
+        action = action,
+        action_log_prob = action_log_prob,
+    )
+    # update policy when necessary
+end
+```
+
+剩下的就是根据PPO的算法，完善优化`PPOLearner`部分啦：
+
+```julia
+function RLBase.update!(learner::PPOLearner, t::PPOTrajectory)
+    #...
+end
+```
+
+接下来我们看看 [Implementation Matters in Deep RL: A Case Study on PPO and TRPO][] 中提到的一些trick如何实现：
+
+1. **Value function clipping**
+  这块的具体实现可以查看[ReinforcementLearningZoo.jl][] 中`PPOLearner`的源码，并不复杂。多说一句，某些时候希望动态地调整`clip_ratio`，可以通过回调函数来实现。
+1. **Reward scaling/Reward clipping**
+  可以通过[ReinforcementLearningBase.jl][] 中的 `RewardOverriddenEnv`很方便地定制。
+1. **Orthogonal initialization and layer scaling**
+  目前 **Orthognal Initialization** 在Flux中并没有提供，我们在 [ReinforcementLearningCore.jl][]中提供了相应的函数。
+1. **Adam learning rate annealing**
+  类似learning rate，也可以通过回调函数实现。
+1. **Observation Normalization/Clipping**
+  可以通过往`StateOverridenEnv`中加入相应的处理函数实现。
+1. **Global Gradient Clipping**
+  [ReinforcementLearningCore.jl][] 中提供了 `global_norm`的实现。
+1. **Hyperbolic tan activation**
+  直接在`NeuralNetworkApproximator`层内部实现即可。
 
 
 #### 整体的性能对比
 
 当然，大家选择使用某个库的时候，除了灵活性之外，最重要的一方面还是运行时效率，这里列出一些内置实验的运行速度，尽管这里用到的配置尽量和[rlpyt][] 或者是 [dopamine][]中的默认配置保持一致，但运行效率上并不好直接做公平的比较，所以仅给出了内置实验的运行速度，以下数据仅用于对比不同算法的运行效率：
+
+The following data are collected from experiments on *Intel(R) Xeon(R) W-2123 CPU @ 3.60GHz* with a GPU card of *RTX 2080ti*.
 
 | Experiment | FPS | Notes |
 |:---------- |:----:| ----:|
@@ -330,3 +415,4 @@ keys(t)  # (:reward, :terminal)
 [ReinforcementLearningEnvironments.jl]: https://github.com/JuliaReinforcementLearning/ReinforcementLearningEnvironments.jl
 [ReinforcementLearningAnIntroduction.jl]: https://github.com/JuliaReinforcementLearning/ReinforcementLearningAnIntroduction.jl
 [OpenAI Gym]: https://github.com/openai/gym
+[Implementation Matters in Deep RL: A Case Study on PPO and TRPO]: https://openreview.net/pdf?id=r1etN1rtPB
