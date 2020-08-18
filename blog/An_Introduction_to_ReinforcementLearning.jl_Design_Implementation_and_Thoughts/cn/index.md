@@ -209,7 +209,7 @@ finally:                                         self.cb('after_batch')
 (h::AbstractHook)(::AbstractStage, args...) = nothing
 ```
 
-用户只需要根据实际使用需要，扩展具体某些场景下的实现即可，我们内置了许多常用的回调函数，多个回调函数又可以通过`ComposedHook`组装成一个单一的回调函数，而这其中最有意思的一个是 `DoEveryNStep(f)`，即每隔`N`步就调用一次`f(t, policy, env)`，有了这个功能之后，我们可以很方便地实现某些需要周期性执行的功能，比如，定期写log记录当前变量的值，定期保存`policy`或者`env`的状态，统计当前系统的性能等等。
+用户只需要根据实际使用需要，扩展具体某些场景下的实现即可，我们内置了许多常用的回调函数，多个回调函数又可以通过`ComposedHook`组装成一个单一的回调函数，而这其中最有意思的一个是 `DoEveryNStep(f)`，即每隔`N`步就调用一次`f(t, policy, env)`，有了这个功能之后，我们可以很方便地实现某些需要周期性执行的功能，比如，定期写log记录当前变量的值，定期保存`policy`或者`env`的状态，统计当前系统的性能等等，其中我最喜欢的一个功能便是通过这个接口周期性地执行evaluation，有点像俄罗斯套娃。
 
 除此之外，根据`policy`和`env`的不同，用户可以自己扩展出不同的`run`函数，自行决定回调函数的执行时机，甚至扩展更多的stage，例如，针对Multi-agent，Simultaneous环境的场景，可能就需要有不同的回调函数。
 
@@ -217,15 +217,113 @@ finally:                                         self.cb('after_batch')
 
 #### 可拔插的优化模块
 
-前面我们用到了一个很简单的`RandomPolicy()`作为示例，介绍了`AbstractPolicy`的基本接口，`(p::AbstractPolicy)(env::AbstractEnv)`。但是，大多数实际使用中的Policy要比这个复杂，我们知道，强化学习最核心的任务便是
+前面我们用到了一个很简单的`RandomPolicy()`作为示例，介绍了`AbstractPolicy`的基本接口，`(p::AbstractPolicy)(env::AbstractEnv)`。但是，大多数实际使用中的Policy要比这个复杂，我们知道，强化学习最核心的任务便是通过与环境的交互，逐渐优化策略，从而使得长期收益最大化。因此我们给`Policy`增加了一个接口：
 
-### 构建生态
+```julia
+update!(p::AbstractPolicy, experience)
+```
+
+这个接口相当通用，这里`experience`根据具体的`Policy`不同，可以有很多种形态，既可以是完整的历史信息，也可以是抽样信息，又或者是单步的信息等等。通常，在Julia中，我们只需要定义出最通用的一种形式即可，然后根据实际场景需要，完成相应的适配器。具体什么意思呢？这里以`QBasedPolicy`展开讲解下。
+
+所谓`QBasedPolicy`，包含两个部分：
+
+```julia
+struct QBasedPolicy
+    learner
+    explorer
+end
+```
+
+其中，`learner`部分负责计算某个状态$s$对应的$Q$值，而`explorer`部分则根据前面得到的$Q$值获取`action`。在深度强化学习领域，通常采用经验回放来训练`learner`，因此最通用的一个`update!`实现便是:
+
+```julia
+function RLBase.update!(leaner, batch::NamedTuple{(:state, :action, :reward, :terminal)})
+    update!(learner, batch)
+end
+```
+
+然后，针对一些其它的`experience`做适配，比如 `CircularCompactSARTSATrajectory` (完整的经验):
+
+```julia
+function RLBase.update!(learner, t::CircularCompactSARTSATrajectory)
+    batch = extract_experience(t, p)
+    update!(learner, batch)
+end
+```
+
+这样，我们便可以将算法的具体实现专注在一个最小的范围内。
+
+在深度强化学习领域里呢，通常会使用一些深度学习的模块来实现对$Q$值或者$V$值的近似求解。这里我们对其提供了一层统一的抽象，叫做`AbstractApproximator`，通过`update!(::AbstractApproximator, gradient)` 来对其优化，这里`gradient`可以有多个来源。这样封装的好处是可以将底层的优化模块独立出来，一定程度上可以避免对某一具体DNN库的依赖。其思想也主要是来源自 RLLib \dcite{pmlr-v80-liang18b}，这样分布式的管理也更方便（尽管现在还没有）。
+\aside{最早我们有对[Knet.jl](https://github.com/denizyuret/Knet.jl)做适配，但是后来出于代码可维护性的考虑在某个版本中去掉了，最近正在考虑增加[Torch.jl](https://github.com/FluxML/Torch.jl)的支持。}
+
+顺便多说点，在代码库中，有一类特殊的Policy —— Agent，`Agent`是个相对特殊的Policy（尽管由于历史遗留原因，其继承自`AbstractAgent`），它将其它的`Policy`与`Trajectory`(即通常所说的 *Experience Replay Buffer*)包裹在一起，用来专门负责管理与环境交互的部分，比如什么时候往`Trajectory`中写入数据，写入什么样的数据，合适更新内部的`Policy`，区分什么时候是训练模式，什么时候是测试模式等。
+
+
+#### Code as Config
+
+目前大多数强化学习库的一个主流观点是，为了保证可复现性，每个实验都会有一份配置文件，比如 [dopamine][] \dcite{castro2018dopamine} 采用了 [gin-config](https://github.com/google/gin-config)，还有的使用了`dict`或者`json`作为配置文件。而在我们的这个库里，采用config文件的意义不是很大，一方面必要的可配置项可以通过keyword argument暴露在Experiment的构造函数里，另外一方面，整个Experiment本身就是一个配置文件，既可以在完成构造之后手动修改，又可以在训练/测试时通过回调函数实时修改。这里我们可以简单看一下最开始提到的那个实验的结构：
+
+```julia:./experiment_JuliaRL_A2C_CartPole
+#hideall
+using ReinforcementLearning
+e = E`JuliaRL_A2C_CartPole`
+print(e)
+```
+
+\output{./experiment_JuliaRL_A2C_CartPole}
+
+那这样有什么好处呢？一方面是直观，我们可以很清楚地看到整个实验的结构及具体的配置项，另外一方面是，我们可以利用回调函数实现许多运行时需要修改的逻辑，从而避免模块之间的相互依赖。比如，在一些算法中，我们希望学习率能根据当前训练进度做调整，通常的做法是在内部封装一个计数器，但是假如我希望根据当前agent训练的效果做动态调整呢？很不幸，那意味着你要拿到完整的运行时信息，这就与我们的模块分离的设计相违背了。但是在我们的设计里，学习速率只是很普通的一个参数，我们可以通过回调函数修改它即可。
+
+#### 可复用的Trajectory
+
+在 [rlpyt][] \dcite{stooke2019rlpyt} 中，作者着重强调了一类数据结构，`namedarraytuple`。在我们的库中，也有类似的实现，即`AbstractTrajectory`。不过，得益于Julia生态中丰富的`Array`类型，我们可以易用性和高性能之间找到一个很好的平衡点：
+
+简单来说呢，`AbstractTrajectory`是一个类似`NamedTuple`的结构，只不过这里为了避免*TypePiracy*的问题，我们构造了一类自己的结构，其中最基本的一种就是`Trajectory`：
+
+```julia
+t = Trajectory(reward=[], terminal=[])
+t[:reward]  # []
+haskey(t, :reward)  # true
+keys(t)  # (:reward, :terminal)
+```
+
+上面这个`Trajectory`使用最基本的`Vector`作为容器，提供了两个`trace`用来记录`reward`和`terminal`，这里容器可以替换成其它各种类型的`Array`，比如 [ElasticArray](https://github.com/JuliaArrays/ElasticArrays.jl)。在我们的库里，广泛使用的一类容器是`CircularArrayBuffer`，主要用于经验回放。其优势在与节省了额外的内存开销，我们可以借助`view`方便快速地读取其中的某些片段。此外还有一类`SharedTrajectory`主要用于多个子`trace`共享同一个容器的情况。最后还有一类容器是`CombinedTrajectory`，用于将多个`Trajectory`合并在一起，从而方便用户在定义新的`Trajectory`地时候，复用库中已有的`Trajectory`。比如，在支持`legal_actions_mask`的时候，又或者是使用*Prioritized Experience Replay Buffer*的时候。
+
+#### Case Study PPO
+
+接下来，我们以 [PPO](schulman2017proximal) \dcite{schulman2017proximal}算法为例，深入讲解其实现细节。之所以选择PPO算法是因为该算法的实现有许多有意思的细节，如果你读过[Implementation Matters in Deep RL: A Case Study on PPO and TRPO](https://openreview.net/pdf?id=r1etN1rtPB)\dcite{engstrom2019implementation}就会明白，这其中的许多实现细节会对该算法的最终效果产生较大的影响，接下来我们就来看看如何用 [ReinforcementLearning.jl][] 这个库，用Julia来实现PPO算法中的这些细节。
+
+
+
+#### 整体的性能对比
+
+当然，大家选择使用某个库的时候，除了灵活性之外，最重要的一方面还是运行时效率，这里列出一些内置实验的运行速度，尽管这里用到的配置尽量和[rlpyt][] 或者是 [dopamine][]中的默认配置保持一致，但运行效率上并不好直接做公平的比较，所以仅给出了内置实验的运行速度，以下数据仅用于对比不同算法的运行效率：
+
+| Experiment | FPS | Notes |
+|:---------- |:----:| ----:|
+| ``E`Dopamine_DQN_Atari(pong)` `` | ~210 | Use the same config of [dqn.gin in google/dopamine](https://github.com/google/dopamine/blob/master/dopamine/agents/dqn/configs/dqn.gin)|
+| ``E`Dopamine_Rainbow_Atari(pong)` `` | ~171 | Use the same config of [rainbow.gin in google/dopamine](https://github.com/google/dopamine/blob/master/dopamine/agents/implicit_quantile/configs/rainbow.gin)|
+| ``E`Dopamine_IQN_Atari(pong)` `` | ~162 | Use the same config of [implicit_quantile.gin in google/dopamine](https://github.com/google/dopamine/blob/master/dopamine/agents/implicit_quantile/configs/implicit_quantile.gin)|
+|``E`rlpyt_A2C_Atari(pong)` ``| ~768 | Use the same default parameters of [A2C in rlpyt](https://github.com/astooke/rlpyt/blob/master/rlpyt/algos/pg/a2c.py) with **4 threads**|
+| ``E`rlpyt_PPO_Atari(pong)` `` | ~711 | Use the same default parameters of [PPO in rlpyt](https://github.com/astooke/rlpyt/blob/master/rlpyt/algos/pg/ppo.py) with **4 threads**|
+
+
+
+### 如何构建整个生态
+
+## 思考
+
+### 还缺什么（对比其他库）
+
+### 未来发展的方向 
 
 [PyTorch]: https://pytorch.org
 [TensorFlow]: https://www.tensorflow.org
 [Julia]: https://www.julialang.org
 [ReinforcementLearning.jl]: https://JuliaReinforcementLearning.org
 [RL Baselines Zoo]: https://github.com/araffin/rl-baselines-zoo
+[rlpyt]: https://github.com/astooke/rlpyt#new-data-structure-namedarraytuple
+[dopamine]: https://github.com/google/dopamine
 [ReinforcementLearningBase.jl]: https://github.com/JuliaReinforcementLearning/ReinforcementLearningBase.jl
 [ReinforcementLearningCore.jl]: https://github.com/JuliaReinforcementLearning/ReinforcementLearningCore.jl
 [ReinforcementLearningZoo.jl]: https://github.com/JuliaReinforcementLearning/ReinforcementLearningZoo.jl
