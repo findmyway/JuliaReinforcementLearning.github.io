@@ -41,8 +41,8 @@ The game is defined like this: assume you have \$10 in your pocket, and you are 
 
 First we define a concrete subtype of `AbstractEnv` named `LotteryEnv`:
 
-```julia:./lottery_env
-using ReinforcementLearningBase
+```julia:./lottery_env_1
+using ReinforcementLearning
 
 mutable struct LotteryEnv <: AbstractEnv
     reward::Union{Nothing, Int}
@@ -53,13 +53,13 @@ LotteryEnv() = LotteryEnv(nothing)
 
 `LotteryEnv` has only one field named `reward`, by default it is initialized with `nothing`. Now let's implement the necessary interfaces:
 
-```julia:./lottery_env
+```julia:./lottery_env_2
 RLBase.get_actions(env::LotteryEnv) = (:PowerRich, :MegaHaul, nothing)
 ```
 
 Here `RLBase` is just an alias for `ReinforcementLearningBase`.
 
-```julia:./lottery_env
+```julia:./lottery_env_3
 RLBase.get_reward(env::LotteryEnv) = env.reward
 RLBase.get_state(env::LotteryEnv) = !isnothing(env.reward)
 RLBase.get_terminal(env::LotteryEnv) = !isnothing(env.reward)
@@ -70,7 +70,7 @@ Because the lottery game is just a simple one-shot game. If the `reward` is `not
 
 The only left one is to implement the game logic:
 
-```julia:./lottery_env
+```julia:./lottery_env_4
 function (env::LotteryEnv)(action)
     if action == :PowerRich
         env.reward = rand() < 0.01 ? 100_000_000 : -10
@@ -84,14 +84,14 @@ end
 
 A simple way to check that your environment works is to apply the [`RandomPolicy`](https://juliareinforcementlearning.org/ReinforcementLearning.jl/latest/rl_base/#ReinforcementLearningBase.RandomPolicy) to the environment.
 
-```julia:./lottery_env
+```julia:./lottery_env_5
 env = LotteryEnv()
 run(RandomPolicy(env), env)
 ```
 
 One step further is to test that other components in ReinforcementLearning.jl also work:
 
-```julia:./lottery_env
+```julia:./lottery_env_6
 using ReinforcementLearning
 using Random # hide
 Random.seed!(123) # hide
@@ -114,7 +114,7 @@ run(
 println(sum(hook.rewards) / 1_000)
 ```
 
-\output{./lottery_env}
+\output{./lottery_env_6}
 
 ## Traits of environments
 

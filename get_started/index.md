@@ -3,6 +3,7 @@
 @def is_enable_toc = false
 @def has_code = true
 @def has_math = true
+@def bibliography = "bibliography.bib"
 
 @def front_matter = """
     {
@@ -25,9 +26,9 @@
 
 ## Prepare
 
-First things first, [download](https://julialang.org/downloads/) and install Julia of the latest stable version. ReinforcementLearning.jl is tested on all platforms, so just choose the one you are familiar with. If you already have Julia installed, please make sure that it is `v1.3` or above.
+First things first, [download](https://julialang.org/downloads/) and install Julia of the latest stable version. ReinforcementLearning.jl is tested on all platforms, so just choose the one you are familiar with. If you already have Julia installed, please make sure that it is `v1.4` or above.
 
-\aside{ReinforcementLearning.jl relies on some features introduced since `v1.3`, like [MultiThreading](https://docs.julialang.org/en/v1/base/multi-threading/index.html), and [Artifacts](https://julialang.github.io/Pkg.jl/dev/artifacts/)}
+\aside{ReinforcementLearning.jl relies on some features introduced since `v1.4`, like [MultiThreading](https://docs.julialang.org/en/v1/base/multi-threading/index.html), and [Artifacts](https://julialang.github.io/Pkg.jl/dev/artifacts/)}
 
 Another useful tool is [tensorboard](https://github.com/tensorflow/tensorboard) \footnote{You don't need to install the whole TensorFlow to use the TensorBoard. Behind the scene, ReinforcementLearning.jl uses [TensorBoardLogger.jl](https://github.com/PhilipVinc/TensorBoardLogger.jl) to write data into the format that TensorBoard recognizes.}. You can install it via `pip install tensorboard` with the python package installer [`pip`](https://pip.pypa.io/en/stable/installing/).
 
@@ -75,7 +76,7 @@ Follow the instruction above and run `tensorboard --logdir /the/path/shown/above
 
 Now that you already know how to run the experiment of [BasicDQN](https://juliareinforcementlearning.org/ReinforcementLearning.jl/latest/rl_zoo/#ReinforcementLearningZoo.BasicDQNLearner) algorithm with the CartPole environment. You are suggested to try some other experiments below to compare the performance of different algorithms \footnote{For the full list of supported algorithms, please visit [ReinforcementLearningZoo.jl](https://github.com/JuliaReinforcementLearning/ReinforcementLearningZoo.jl#list-of-built-in-experiments)}:
 
-\aside{Note that the parameters in the experiments listed here are tuned.}
+\aside{Note that the parameters in the experiments listed here are **not** tuned.}
 
 - ``E`JuliaRL_BasicDQN_CartPole` ``
 - ``E`JuliaRL_DQN_CartPole` ``

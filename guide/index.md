@@ -70,7 +70,7 @@ As we mentioned above, a trajectory is used to store some useful data during int
 ```julia
 t = CircularCompactSARTSATrajectory(;capacity=3)
 push!(t; state=1, action=1, reward=0., terminal=false, next_state=2, next_action=2)
-get_trace(t, :state)
+t[:state]
 empty!(t)
 ```
 
