@@ -30,7 +30,7 @@
 
 \dfig{body;img/how_to_do_well_in_reinforcement_learning.png;1. 很好的数学基础；2. 不错的调参能力；3. 分布式系统的经验；4. 很强的编程能力。 Source: [presentation2018h1.pdf #66th page](https://yuandong-tian.com/presentation2018h1.pdf) }
 
-彼时我不过刚刚入门强化学习领域，对前三点自然是深表赞同，唯独对第四点持保留意见。右下角的第四幅图里，画的是C++和Python。Python程序员们有一个共识是，那就是，如果一段Python代码成为了性能瓶颈，那么就用C/C++来改写吧！然而这会导致所谓的[2 language problem](https://www.quora.com/What-is-the-2-language-problem-in-data-science)，其最核心的问题就是代码的可复用性与可扩展性。那时候我刚接触Julia不久，而其最大的卖点之一便是要解决这个问题，于是决定就用它来试试。使用一门比较新的编程语言来做强化学习遇到的第一个问题便是，缺少类似[OpenAI Gym][]一样的实验环境，但是使用[PyCall.jl](https://github.com/JuliaPy/PyCall.jl)会有明显的性能损失，于是动手用[CxxWrap.jl](https://github.com/JuliaInterop/CxxWrap.jl) 尝试封装了一个 [ViZDoom.jl](https://github.com/JuliaReinforcementLearning/ViZDoom.jl)的库，碰巧这个时候，[Johanni Brea](https://github.com/jbrea)写了一个经典强化学习算法的库，然后问我有没有兴趣一起来写这个库，经历了反复好几个版本的迭代，最终得到了现在这一相对稳定的版本，感谢 Johanni 的信任和帮助，如果没有Johanni的支持，我恐怕是很难坚持下来的。
+彼时我不过刚刚入门强化学习领域，对前三点自然是深表赞同，唯独对第四点持保留意见。右下角的第四幅图里，画的是C++和Python。Python程序员们有一个共识是，那就是，如果一段Python代码成为了性能瓶颈，那么就用C/C++来改写吧！然而这会导致所谓的[2 language problem](https://www.quora.com/What-is-the-2-language-problem-in-data-science)，其最核心的问题就是代码的可复用性与可扩展性。那时候我刚接触Julia不久，而其最大的卖点之一便是要解决这个问题，于是决定就用它来试试。使用一门比较新的编程语言来做强化学习遇到的第一个问题便是，缺少类似[OpenAI Gym][]一样的实验环境，但是使用[PyCall.jl](https://github.com/JuliaPy/PyCall.jl)会有明显的性能损失，于是动手用[CxxWrap.jl](https://github.com/JuliaInterop/CxxWrap.jl) 尝试封装了一个 [ViZDoom.jl](https://github.com/JuliaReinforcementLearning/ViZDoom.jl)的库，碰巧这个时候，[Johanni Brea](https://github.com/jbrea)写了一个经典强化学习算法的库，然后问我有没有兴趣一起来丰富这个库，经历了反复好几个版本的迭代，最终得到了现在这一相对稳定的版本，感谢 Johanni 的信任和帮助，如果没有他的支持，我恐怕是很难坚持下来的。
 
 接下来我将简要介绍 [ReinforcementLearning.jl][] 的一些核心特性，同时将其与一些主流强化学习库的设计做对比，分析Julia语言本身的特性对整个库的设计与实现细节的影响，最后对未来这个库可能的几个发展方向做了进一步探讨。
 
@@ -58,7 +58,7 @@ Flux.testmode!(e.agent)
 run(e.agent, e.env, StopAfterEpisode(1), e.hook)
 ```
 
-可以看到，这里主要是借鉴了 [Stable Baselines](https://github.com/hill-a/stable-baselines) 以及 [RL Baselines Zoo][] 的思想，提供了一整套完整可复现的实验，不过可惜的是，受到计算资源限制，以及Julia语言中实验环境的限制，我们并没有提供像 [RL Baselines Zoo][]中那么多的预训练好的实验。（如果读者有兴趣完整运行了某个实验，欢迎发PR贡献预训练模型）
+可以看到，这里主要是借鉴了 [Stable Baselines](https://github.com/hill-a/stable-baselines) 以及 [RL Baselines Zoo][] 的思想，提供了一整套完整可复现的实验，不过可惜的是，受到计算资源限制，以及Julia语言中实验环境的限制，我们并没有提供像 [RL Baselines Zoo][]中那么多的预训练好的实验（如果读者有兴趣完整运行了某个实验，欢迎发PR贡献预训练模型）。
 
 ### 可复现性
 
@@ -103,7 +103,7 @@ run(e.agent, e.env, StopAfterEpisode(1), e.hook)
 |               |         |     POMDPs.jl                        |                          |
 |               |         |     PyCall.jl                        |                          |
 |               |         |     ViZDoom.jl                       |                          |
-|               |         |     GridWorld.jl(WIP)                     |                          |
+|               |         |     GridWorld.jl(WIP)                |                          |
 |               |         +--------------------------------------+                          |
 |               |                                                                           |
 |               |         +------------------------------+                                  |
@@ -124,7 +124,7 @@ run(e.agent, e.env, StopAfterEpisode(1), e.hook)
 
 - [ReinforcementLearningBase.jl][] 提供接口定义和某些常用算法的最小实现，其基本要求是，尽量简化其依赖，只保留基于`AbstractPolicy`和`AbstractEnv`相关的定义、实现、与扩展。
 - [ReinforcementLearningCore.jl][] 主要以`Agent`为单位展开，提供`AbstractEnv`与`AbstractPolicy`交互逻辑的基本实现，所有可复用的模块都放在这里，如`AbstractExplorer`(采样器), `AbstractTrajectory`(经验回放) 以及`AbstractApproximator`(近似求解器)等。
-- [ReinforcementLearningZoo.jl][] 主要基于[ReinforcementLearningCore][] 来实现各个主流深度强化学习算法，此外针对各个算法提供必要的可供复现的实验。
+- [ReinforcementLearningZoo.jl][] 主要基于[ReinforcementLearningCore.jl][] 来实现各个主流深度强化学习算法，此外针对各个算法提供必要的可供复现的实验。
 - [ReinforcementLearningEnvironments.jl][] 一定程度上充当了 [OpenAI Gym][] 的作用，用于为各种不同的强化学习实验环境提供统一的接口。
 - [ReinforcementLearningAnIntroduction.jl][] 基于 [ReinforcementLearningCore.jl][] 实现了 [Reinforcement Learning: An Introduction(2nd)](http://incompleteideas.net/book/the-book-2nd.html) 一书中涉及到的经典强化学习的算法，同时复现了书中涵盖到的例子。
 
@@ -175,9 +175,12 @@ end
 
 当然，除了终止条件之外，还有很重要的一环，即**回调函数**。通常，我们在实验过程中需要记录一些重要信息，比如，收集上一个epoch 运行了多久，统计当前平均每个epoch收益是多少等等，由于这类运行时逻辑根据使用者的需求不同有很大的差异，一般无法泛化继承到一个个子模块内部，所以，大多数的机器学习库中都会将回调函数的接口暴露出来（比如Flux里的[train!](https://github.com/FluxML/Flux.jl/blob/318ef9d90640cc7effd29bfe8c6b11e924920d29/src/optimise/train.jl#L60-L95)函数）。在 FastAI \dcite{howard2020fastai} 的API设计中，我们同样看到了相关的设计：
 
-> There is a rich history of using callbacks to allow for customisation of numeric software, and today nearly all modern deep learning libraries provide this functionality. However, fastai’s callback system is the first that we are aware of that supports
-the design principles necessary for complete two-way callbacks:
+> There is a rich history of using callbacks to allow for customisation of numeric software, and today nearly all modern deep learning libraries provide this functionality. However, fastai’s callback system is the first that we are aware of that supports the design principles necessary for complete two-way callbacks:
+
+\aside{老实说，当初设计的时候其实并不知道FastAI的这套所谓的 *two-way callbacks*设计，具体可以看相关的[issue](https://github.com/JuliaReinforcementLearning/ReinforcementLearning.jl/issues/24#issuecomment-464083981)。}
+
 > • A callback should be available at every single point that code can be run during training, so that a user can customise every single detail of the training method ;
+
 > • Every callback should be able to access every piece of information available at that stage in the training loop, including hyper-parameters, losses, gradients, input and target data, and so forth ;
 
 这里我们也采用了类似的做法，稍稍不同的是，我们的设计中充分利用了Julia语言提供的Multiple Dispatch 功能。这里作为对比，我们来看一下FastAI中的实现逻辑：
@@ -407,6 +410,8 @@ The following data are collected from experiments on *Intel(R) Xeon(R) W-2123 CP
 - [ShangtongZhang/reinforcement-learning-an-introduction](https://github.com/ShangtongZhang/reinforcement-learning-an-introduction)
 - [google/dopamine](https://github.com/google/dopamine)
 - [Spinning Up](https://spinningup.openai.com/en/latest/) TD3和TRPO没有实现（至少我没看到实现起来有什么太难的地方，就交给热心开源贡献的小伙伴们啦~）
+
+总的来说，这个库还是更偏向教学性质更多一些，所能处理的任务也局限在单机所能解决的问题上，但在设计层面上由于足够灵活，可以做到很方便的扩展到多级多卡多框架的场景下。
 
 有一些想做但还没有时间做的事情：
 
