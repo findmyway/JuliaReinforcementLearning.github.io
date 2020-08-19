@@ -3,6 +3,7 @@
 @def is_enable_toc = true
 @def has_code = true
 @def has_math = true
+@def bibliography = "bibliography.bib"
 
 @def front_matter = """
     {
@@ -52,7 +53,7 @@ run(E`JuliaRL_A2C_CartPole`)
 ```julia
 ID = "JuliaRL_BasicDQN_CartPole"
 e = Experiment(ID)
-e.agent.policy = load_policy(x)
+e.agent.policy = load_policy(ID)
 Flux.testmode!(e.agent)
 run(e.agent, e.env, StopAfterEpisode(1), e.hook)
 ```
@@ -79,44 +80,45 @@ run(e.agent, e.env, StopAfterEpisode(1), e.hook)
 
 但是，多亏了Multiple Dispatch，这一点在Julia语言中得到了很好地解决，算法的实现可以先用最简洁的方式书写，遇到瓶颈之后再逐步优化，关键的地方可以有多个实现。接下来我们将自顶向下逐步介绍[ReinforcementLearning.jl][]的可扩展性：
 
-#### Anti-framework
+### Anti-framework
 
 首先我们来看下 [ReinforcementLearning.jl][] 的代码组织结构：
 
-<pre>+-------------------------------------------------------------------------------------------+
+```
++-------------------------------------------------------------------------------------------+
 |                                                                                           |
-|  <a href="https://github.com/JuliaReinforcementLearning/ReinforcementLearning.jl">ReinforcementLearning.jl</a>                                                                 |
+|  ReinforcementLearning.jl                                                                 |
 |                                                                                           |
 |      +------------------------------+                                                     |
-|      | <a href="https://github.com/JuliaReinforcementLearning/ReinforcementLearningBase.jl">ReinforcementLearningBase.jl</a> |                                                     |
+|      | ReinforcementLearningBase.jl |                                                     |
 |      +--------|---------------------+                                                     |
 |               |                                                                           |
 |               |         +--------------------------------------+                          |
-|               |         | <a href="https://github.com/JuliaReinforcementLearning/ReinforcementLearningEnvironments.jl">ReinforcementLearningEnvironments.jl</a> |                          |
+|               |         | ReinforcementLearningEnvironments.jl |                          |
 |               |         |                                      |                          |
 |               |         |     (Conditionally depends on)       |                          |
 |               |         |                                      |                          |
-|               |         |     <a href="https://github.com/JuliaReinforcementLearning/ArcadeLearningEnvironment.jl">ArcadeLearningEnvironment.jl</a>     |                          |
-|               +--------&gt;+     <a href="https://github.com/JuliaReinforcementLearning/OpenSpiel.jl">OpenSpiel.jl</a>                     |                          |
-|               |         |     <a href="https://github.com/JuliaPOMDP/POMDPs.jl">POMDPs.jl</a>                        |                          |
-|               |         |     <a href="https://github.com/JuliaPy/PyCall.jl">PyCall.jl</a>                        |                          |
-|               |         |     <a href="https://github.com/JuliaReinforcementLearning/ViZDoom.jl">ViZDoom.jl</a>                       |                          |
+|               |         |     ArcadeLearningEnvironment.jl     |                          |
+|               +-------->+     OpenSpiel.jl                     |                          |
+|               |         |     POMDPs.jl                        |                          |
+|               |         |     PyCall.jl                        |                          |
+|               |         |     ViZDoom.jl                       |                          |
 |               |         |     GridWorld.jl(WIP)                     |                          |
 |               |         +--------------------------------------+                          |
 |               |                                                                           |
 |               |         +------------------------------+                                  |
-|               +--------&gt;+ <a href="https://github.com/JuliaReinforcementLearning/ReinforcementLearningCore.jl">ReinforcementLearningCore.jl</a> |                                  |
+|               +-------->+ ReinforcementLearningCore.jl |                                  |
 |                         +--------|---------------------+                                  |
 |                                  |                                                        |
 |                                  |          +-----------------------------+               |
-|                                  |---------&gt;+ <a href="https://github.com/JuliaReinforcementLearning/ReinforcementLearningZoo.jl">ReinforcementLearningZoo.jl</a> |               |
+|                                  |--------->+ ReinforcementLearningZoo.jl |               |
 |                                  |          +-----------------------------+               |
 |                                  |                                                        |
 |                                  |          +----------------------------------------+    |
-|                                  +---------&gt;+ <a href="https://github.com/JuliaReinforcementLearning/ReinforcementLearningAnIntroduction.jl">ReinforcementLearningAnIntroduction.jl</a> |    |
+|                                  +--------->+ ReinforcementLearningAnIntroduction.jl |    |
 |                                             +----------------------------------------+    |
 +-------------------------------------------------------------------------------------------+
-</pre>
+```
 
 [ReinforcementLearning.jl][] 本身并不是一套用于强化学习的计算框架，它只是将许多强化学习中常用的一些模块有机地组织在了一起。之所以将其拆分成了多个子库，主要是为了敏捷开发，各个子库遵循Semantic Version发布版本号，同时可以做到依赖分离，避免造成开发某些小的功能算法的时候，依赖某些庞大的（或者是只在某些平台上才能运行的）库。各个库的基本介绍如下：
 
@@ -213,9 +215,9 @@ finally:                                         self.cb('after_batch')
 
 除此之外，根据`policy`和`env`的不同，用户可以自己扩展出不同的`run`函数，自行决定回调函数的执行时机，甚至扩展更多的stage，例如，针对Multi-agent，Simultaneous环境的场景，可能就需要有不同的回调函数。
 
-至此，我们就对[ReinforcementLearning.jl][]这个库的大致运行逻辑有所了解啦！鼓励大家查看[run.jl](https://github.com/JuliaReinforcementLearning/ReinforcementLearningCore.jl/blob/master/src/core/run.jl)中的实现，了解和学习如何针对自己的时机使用需要，扩展出灵活的运行时逻辑。
+至此，我们就对[ReinforcementLearning.jl][]这个库的大致运行逻辑有所了解啦！鼓励大家查看[run.jl](https://github.com/JuliaReinforcementLearning/ReinforcementLearningCore.jl/blob/master/src/core/run.jl)中的实现，了解和学习如何针对自己的实际使用需要，扩展出灵活的运行时逻辑。
 
-#### 可拔插的优化模块
+### 可拔插的优化模块
 
 前面我们用到了一个很简单的`RandomPolicy()`作为示例，介绍了`AbstractPolicy`的基本接口，`(p::AbstractPolicy)(env::AbstractEnv)`。但是，大多数实际使用中的Policy要比这个复杂，我们知道，强化学习最核心的任务便是通过与环境的交互，逐渐优化策略，从而使得长期收益最大化。因此我们给`Policy`增加了一个接口：
 
@@ -259,7 +261,7 @@ end
 顺便多说点，在代码库中，有一类特殊的Policy —— Agent，`Agent`是个相对特殊的Policy（尽管由于历史遗留原因，其继承自`AbstractAgent`），它将其它的`Policy`与`Trajectory`(即通常所说的 *Experience Replay Buffer*)包裹在一起，用来专门负责管理与环境交互的部分，比如什么时候往`Trajectory`中写入数据，写入什么样的数据，合适更新内部的`Policy`，区分什么时候是训练模式，什么时候是测试模式等。
 
 
-#### Code as Config
+### Code as Config
 
 目前大多数强化学习库的一个主流观点是，为了保证可复现性，每个实验都会有一份配置文件，比如 [dopamine][] \dcite{castro2018dopamine} 采用了 [gin-config](https://github.com/google/gin-config)，还有的使用了`dict`或者`json`作为配置文件。而在我们的这个库里，采用config文件的意义不是很大，一方面必要的可配置项可以通过keyword argument暴露在Experiment的构造函数里，另外一方面，整个Experiment本身就是一个配置文件，既可以在完成构造之后手动修改，又可以在训练/测试时通过回调函数实时修改。这里我们可以简单看一下最开始提到的那个实验的结构：
 
@@ -274,7 +276,7 @@ print(e)
 
 那这样有什么好处呢？一方面是直观，我们可以很清楚地看到整个实验的结构及具体的配置项，另外一方面是，我们可以利用回调函数实现许多运行时需要修改的逻辑，从而避免模块之间的相互依赖。比如，在一些算法中，我们希望学习率能根据当前训练进度做调整，通常的做法是在内部封装一个计数器，但是假如我希望根据当前agent训练的效果做动态调整呢？很不幸，那意味着你要拿到完整的运行时信息，这就与我们的模块分离的设计相违背了。但是在我们的设计里，学习速率只是很普通的一个参数，我们可以通过回调函数修改它即可。
 
-#### 可复用的Trajectory
+### 可复用的Trajectory
 
 在 [rlpyt][] \dcite{stooke2019rlpyt} 中，作者着重强调了一类数据结构，`namedarraytuple`。在我们的库中，也有类似的实现，即`AbstractTrajectory`。不过，得益于Julia生态中丰富的`Array`类型，我们可以易用性和高性能之间找到一个很好的平衡点：
 
@@ -289,7 +291,7 @@ keys(t)  # (:reward, :terminal)
 
 上面这个`Trajectory`使用最基本的`Vector`作为容器，提供了两个`trace`用来记录`reward`和`terminal`，这里容器可以替换成其它各种类型的`Array`，比如 [ElasticArray](https://github.com/JuliaArrays/ElasticArrays.jl)。在我们的库里，广泛使用的一类容器是`CircularArrayBuffer`，主要用于经验回放。其优势在与节省了额外的内存开销，我们可以借助`view`方便快速地读取其中的某些片段。此外还有一类`SharedTrajectory`主要用于多个子`trace`共享同一个容器的情况。最后还有一类容器是`CombinedTrajectory`，用于将多个`Trajectory`合并在一起，从而方便用户在定义新的`Trajectory`地时候，复用库中已有的`Trajectory`。比如，在支持`legal_actions_mask`的时候，又或者是使用*Prioritized Experience Replay Buffer*的时候。
 
-#### Case Study PPO
+### Case Study PPO
 
 接下来，我们以 [PPO](schulman2017proximal) \dcite{schulman2017proximal}算法为例，深入讲解其实现细节。之所以选择PPO算法是因为该算法的实现有许多有意思的细节，如果你读过[Implementation Matters in Deep RL: A Case Study on PPO and TRPO][]\dcite{engstrom2019implementation}就会明白，这其中的许多实现细节会对该算法的最终效果产生较大的影响，接下来我们就来看看如何用 [ReinforcementLearning.jl][] 这个库，用Julia来实现PPO算法中的这些细节。
 
@@ -336,7 +338,12 @@ function PPOTrajectory(; capacity, action_log_prob_size = (), action_log_prob_ty
 end
 ```
 
-然后，在`PreActStage`将$\pi_\theta(a_t|s_t)$塞入`PPOTrajectory`：
+
+由于现在，我们要求`QBasedPolicy{<:PPOLearner}`返回`(action, log_prob)`这样的pair，打破了之前关于`(p::AbstractPolicy)(env::AbstractEnv)`的假设，不过没关系，Julia中对返回值并没有做限制，我们只需要扩展用到该返回值的地方，将其中的action取出来即可。
+
+\aside{最理想的做法是，构造一个新的结构体，比如`ActionWithProb`，然后将所有用到它的函数都扩展下。不过，这里我偷懒只是简单用了个`tuple`。}
+
+比如，在`PreActStage`将$\pi_\theta(a_t|s_t)$塞入`PPOTrajectory`：
 
 ```julia
 function (agent::Agent{<:AbstractPolicy,<:PPOTrajectory})(::Training{PreActStage}, env)
@@ -356,29 +363,29 @@ end
 
 ```julia
 function RLBase.update!(learner::PPOLearner, t::PPOTrajectory)
-    #...
+    #... see more details at https://github.com/JuliaReinforcementLearning/ReinforcementLearningZoo.jl/blob/cf9bf197bc2b0493c329112cbdf41abe9523403e/src/algorithms/policy_gradient/ppo.jl#L102-L187
 end
 ```
 
 接下来我们看看 [Implementation Matters in Deep RL: A Case Study on PPO and TRPO][] 中提到的一些trick如何实现：
 
 1. **Value function clipping**
-  这块的具体实现可以查看[ReinforcementLearningZoo.jl][] 中`PPOLearner`的源码，并不复杂。多说一句，某些时候希望动态地调整`clip_ratio`，可以通过回调函数来实现。
+    这块的具体实现可以查看[ReinforcementLearningZoo.jl][] 中`PPOLearner`的源码，并不复杂。多说一句，某些时候希望动态地调整`clip_ratio`，可以通过回调函数来实现。
 1. **Reward scaling/Reward clipping**
-  可以通过[ReinforcementLearningBase.jl][] 中的 `RewardOverriddenEnv`很方便地定制。
+    可以通过[ReinforcementLearningBase.jl][] 中的 `RewardOverriddenEnv`很方便地定制。
 1. **Orthogonal initialization and layer scaling**
-  目前 **Orthognal Initialization** 在Flux中并没有提供，我们在 [ReinforcementLearningCore.jl][]中提供了相应的函数。
+    目前 **Orthognal Initialization** 在Flux中并没有提供，我们在 [ReinforcementLearningCore.jl][]中提供了相应的函数。
 1. **Adam learning rate annealing**
-  类似learning rate，也可以通过回调函数实现。
+    类似learning rate，也可以通过回调函数实现。
 1. **Observation Normalization/Clipping**
-  可以通过往`StateOverridenEnv`中加入相应的处理函数实现。
+    可以通过往`StateOverridenEnv`中加入相应的处理函数实现。
 1. **Global Gradient Clipping**
-  [ReinforcementLearningCore.jl][] 中提供了 `global_norm`的实现。
+    [ReinforcementLearningCore.jl][] 中提供了 `global_norm`的实现。
 1. **Hyperbolic tan activation**
-  直接在`NeuralNetworkApproximator`层内部实现即可。
+    直接在`NeuralNetworkApproximator`层内部实现即可。
 
 
-#### 整体的性能对比
+### 整体的性能对比
 
 当然，大家选择使用某个库的时候，除了灵活性之外，最重要的一方面还是运行时效率，这里列出一些内置实验的运行速度，尽管这里用到的配置尽量和[rlpyt][] 或者是 [dopamine][]中的默认配置保持一致，但运行效率上并不好直接做公平的比较，所以仅给出了内置实验的运行速度，以下数据仅用于对比不同算法的运行效率：
 
@@ -393,14 +400,30 @@ The following data are collected from experiments on *Intel(R) Xeon(R) W-2123 CP
 | ``E`rlpyt_PPO_Atari(pong)` `` | ~711 | Use the same default parameters of [PPO in rlpyt](https://github.com/astooke/rlpyt/blob/master/rlpyt/algos/pg/ppo.py) with **4 threads**|
 
 
-
-### 如何构建整个生态
-
 ## 思考
 
-### 还缺什么（对比其他库）
+目前来看，[ReinforcementLearning.jl][] 所提供的大致是以下几个库的集合：
 
-### 未来发展的方向 
+- [ShangtongZhang/reinforcement-learning-an-introduction](https://github.com/ShangtongZhang/reinforcement-learning-an-introduction)
+- [google/dopamine](https://github.com/google/dopamine)
+- [Spinning Up](https://spinningup.openai.com/en/latest/) TD3和TRPO没有实现（至少我没看到实现起来有什么太难的地方，就交给热心开源贡献的小伙伴们啦~）
+
+有一些想做但还没有时间做的事情：
+
+- 一些Multi-Agent相关的算法正在实现，但可能会花比较长的时间
+- Model Based的一些算法还没涵盖
+- 已有算法的recurrent版本改进
+- 集成AlphaZero
+- 写一个相对通用高效的MCTS实现
+
+还有一些想做但没有资源做的事情：
+
+- 多GPU、跨机器并行的大规模算法实现（类似[seed-rl](https://github.com/google-research/seed_rl)）
+
+剩下还有一些希望有社区里其它人来做的事情：
+
+- 写更多强化学习环境相关的wrapper（许多强化学习相关的环境都是C/C++写的，其实用[CxxWrap.jl](https://github.com/JuliaInterop/CxxWrap.jl)或者[Clang.jl](https://github.com/JuliaInterop/Clang.jl)封装一下就可以用了）
+- 写一些控制相关的环境（continuous control相关的环境太少了......）
 
 [PyTorch]: https://pytorch.org
 [TensorFlow]: https://www.tensorflow.org
