@@ -31,7 +31,7 @@ reset!(env::YourEnv)
 (env::YourEnv)(action)
 ```
 
-Here we use an example introduced in [Monte Carlo Tree Search: A Tutorial](https://www.informs-sim.org/wsc18papers/includes/files/021.pdf) to demonstrate how to write a simple environment.
+Here we use an example introduced in [Monte Carlo Tree Search: A Tutorial][] to demonstrate how to write a simple environment.
 
 The game is defined like this: assume you have \$10 in your pocket, and you are faced with the following three choices:
 
@@ -39,16 +39,16 @@ The game is defined like this: assume you have \$10 in your pocket, and you are 
 1. Buy a MegaHaul lottery ticket (win \$1M w.p. 0.05; nothing otherwise);
 1. Do not buy a lottery ticket.
 
-First we define a concrete subtype of `AbstractEnv` named `LotteryEnv`:
+\dfig{page;LotteryEnv.png;Decision tree for lottery choices. Source: Figure 1 in [Monte Carlo Tree Search: A Tutorial][]}
+
+First we define a concrete type named `LotteryEnv`, which is a subtype of `AbstractEnv`:
 
 ```julia:./lottery_env
 using ReinforcementLearningBase
 
-mutable struct LotteryEnv <: AbstractEnv
-    reward::Union{Nothing, Int}
+Base.@kwdef mutable struct LotteryEnv <: AbstractEnv
+    reward::Union{Nothing, Int} = nothing
 end
-
-LotteryEnv() = LotteryEnv(nothing)
 ```
 
 `LotteryEnv` has only one field named `reward`, by default it is initialized with `nothing`. Now let's implement the necessary interfaces:
@@ -57,7 +57,7 @@ LotteryEnv() = LotteryEnv(nothing)
 RLBase.get_actions(env::LotteryEnv) = (:PowerRich, :MegaHaul, nothing)
 ```
 
-Here `RLBase` is just an alias for `ReinforcementLearningBase`.
+Here `RLBase` is just an alias for `ReinforcementLearningBase`. Based on the description above, we define a `Tuple` of 3 symbols as the possible actions for the `LotteryEnv`.
 
 ```julia:./lottery_env
 RLBase.get_reward(env::LotteryEnv) = env.reward
@@ -66,9 +66,9 @@ RLBase.get_terminal(env::LotteryEnv) = !isnothing(env.reward)
 RLBase.reset!(env::LotteryEnv) = env.reward = nothing
 ```
 
-Because the lottery game is just a simple one-shot game. If the `reward` is `nothing` then the game is not terminated yet and we say the game is in state `false`, otherwise the game is terminated and the state is `true`. By `reset!` the game, we simply assign the reward with `nothing`, meaning that it's in the initial state.
+The lottery game is just a simple one-shot game. We take an action and then the reward is stored in the game. Then we can get the reward through `get_reward`. This simple game has only two states, `true` or `false`. If the `reward` field is `nothing` then the game is not terminated yet and we say the game is in state `false`, otherwise the game is terminated and the state is `true`. By `reset!`ing the game, we simply assign the reward with `nothing`, meaning that it's in the initial state.
 
-The only left one is to implement the game logic:
+The only left one to implement is the game logic:
 
 ```julia:./lottery_env
 function (env::LotteryEnv)(action)
@@ -89,33 +89,6 @@ env = LotteryEnv()
 run(RandomPolicy(env), env)
 ```
 
-One step further is to test that other components in ReinforcementLearning.jl also work:
-
-```julia:./lottery_env
-using ReinforcementLearning
-using Random # hide
-Random.seed!(123) # hide
-hook = TotalRewardPerEpisode()
-run(
-    Agent(
-        ;policy = RandomPolicy(env),
-        trajectory = VectCompactSARTSATrajectory(
-            state_type=Bool,
-            action_type=Any,
-            reward_type=Int,
-            terminal_type=Bool,
-        ),
-    ),
-    LotteryEnv(),
-    StopAfterEpisode(1_000),
-    hook
-)
-
-println(sum(hook.rewards) / 1_000)
-```
-
-\output{./lottery_env}
-
 ## Traits of environments
 
 If you run `LotteryEnv()` in the REPL, you'll get the following summary of the environment:
@@ -127,15 +100,68 @@ show(stdout, MIME"text/plain"(), LotteryEnv())  # hide
 
 \output{./show_lottery_env}
 
-The **Traits** section describes which category the environment belongs to. As you can see, by default an environment is assumed to be of:
+The **Traits** section describes which categories the environment belongs to. Some of them are straightforward. The `NumAgentStyle` describes how many agents the environment to deal with. The `RewardStyle` describes when we get the reward. The default value is `StepReward()`, which means we can `get_reward(env)` after each step. But for some other games, for example [Tic-Tac-Toe](https://en.wikipedia.org/wiki/Tic-tac-toe) or [Go](https://en.wikipedia.org/wiki/Go_(game)), we only get reward at the end of game. For other traits, we'll explain them with examples one-by-one.
 
-- `SingleAgent`
-- `Sequential`
-- `PerfectInformation`
-- `Deterministic`
-- `StepReward`
-- `GeneralSum`
-- `MinimalActionSet`
+### Rock-Paper-Scissors
+
+\dfig{body;https://upload.wikimedia.org/wikipedia/commons/thumb/6/67/Rock-paper-scissors.svg/440px-Rock-paper-scissors.svg.png;A chart showing how the three game elements interact. Source: [wiki](https://en.wikipedia.org/wiki/Rock_paper_scissors)}
+
+Now let's see how to define one of the most traiditional multi-agent games: [Rock-Paper-Scissors](https://en.wikipedia.org/wiki/Rock_paper_scissors). First we need to define the struct `RockPaperScissorsEnv` which inherits `AbstractEnv`:
+
+```julia
+Base.@kwdef mutable struct RockPaperScissorsEnv <: AbstractEnv
+    rewards::Union{Nothing, Tuple{Int, Int}} = nothing
+end
+```
+
+The Rock-Paper-Scissors game has two players. We describe it with the `NumAgentStyle` like this:
+
+```julia
+RLBase.NumAgentStyle(::RockPaperScissorsEnv) = MultiAgent(2)
+RLBase.get_players(::RockPaperScissorsEnv) = (:player1, :player2)
+```
+
+The possible actions for each player are exactly the same, so we have:
+
+```julia
+RLBase.get_actions(::RockPaperScissorsEnv) = (:Rock, :Paper, :Scissors)
+```
+
+And the Rock-Paper-Scissors game is a typical [simultaneous game](https://en.wikipedia.org/wiki/Simultaneous_game). Both players take actions at the same time:
+
+```julia
+RLBase.DynamicStyle(::RockPaperScissorsEnv) = SIMULTANEOUS
+RLBase.get_reward(env::RockPaperScissorsEnv) = env.reward
+
+function RLBase.get_reward(env::RockPaperScissorsEnv, player)
+    if player == :player1
+        env.reward[1]
+    elseif player == :player2
+        env.reward[2]
+    else
+        error("unknown player: $player")
+    end
+end
+
+function (env::RockPaperScissorsEnv)(actions)
+    if actions[1] == actions[2]
+        env.reward = (0, 0)
+    elseif actions[1] == :Rock && actions[2] == :Paper ||
+        actions[1] == :Paper && actions[2] == :Scissors ||
+        actions[1] == :Scissors && actions[2] == :Rock
+        env.reward = (-1, 1)
+    else
+        env.reward = (1, -1)
+    end
+end
+```
+
+Similar to the `LotteryEnv`, Rock-Paper-Scissors is also a one-shot game.
+
+```julia
+RLBase.get_terminal(env::RockPaperScissorsEnv) = !isnothing(env.reward)
+RLBase.get_state(env::RockPaperScissorsEnv) = !isnothing(env.reward)
+```
 
 ### ActionStyle
 
@@ -249,3 +275,4 @@ env = LotteryEnv() |> StateOverriddenEnv(s -> Int(s))
 See the full list of other environment wrappers [here](https://github.com/JuliaReinforcementLearning/ReinforcementLearningBase.jl/blob/master/src/implementations/environments.jl).
 
 [ReinforcementLearningBase.jl]: https://github.com/JuliaReinforcementLearning/ReinforcementLearningBase.jl/blob/master/src/interface.jl
+[Monte Carlo Tree Search: A Tutorial]: https://www.informs-sim.org/wsc18papers/includes/files/021.pdf
