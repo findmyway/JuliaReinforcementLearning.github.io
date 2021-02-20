@@ -4,6 +4,8 @@
 
 ## Blog List
 
+- [An Introduction to ReinforcementLearning.jl: Design, Implementation and Thoughts](blog/an_introduction_to_reinforcement_learning_jl_design_implementation_thoughts)
+
 - [How to Write a Customized
   Environment?](/blog/how_to_write_a_customized_environment/)
 
